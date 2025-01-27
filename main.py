@@ -1,263 +1,177 @@
+# The Concert class handles operations related to concerts.
 import sqlite3
 
-# The Concert class handles operations related to concerts.
-class Concert:
-    def __init__(self, concert_id):
-        self.concert_id = concert_id
+# Connect to the database
+connection = sqlite3.connect(':memory:')
+cursor = connection.cursor()
 
-    # Retrieve the band performing at this concert.
-    def band(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-        query = """
-        SELECT bands.id, bands.name, bands.hometown
-        FROM bands
-        JOIN concerts ON concerts.band_id = bands.id
-        WHERE concerts.id = ?;
-        """
-        cursor.execute(query, (self.concert_id,))
-        band = cursor.fetchone()
-        connection.close()
-        if band:
-            return Band(band[0], band[1], band[2])  # Return a Band object.
-        else:
-            return None
+# Create the tables
+cursor.execute('''
+CREATE TABLE bands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    hometown TEXT NOT NULL
+);
+''')
 
-    # Retrieve the venue where this concert is held.
-    def venue(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-        query = """
-        SELECT venues.id, venues.title, venues.city
-        FROM venues
-        JOIN concerts ON concerts.venue_id = venues.id
-        WHERE concerts.id = ?;
-        """
-        cursor.execute(query, (self.concert_id,))
-        venue = cursor.fetchone()
-        connection.close()
-        if venue:
-            return Venue(venue[0], venue[1], venue[2])  # Return a Venue object.
-        else:
-            return None
+cursor.execute('''
+CREATE TABLE venues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    city TEXT NOT NULL
+);
+''')
 
-    # Check if the concert is a hometown show (band's hometown matches the venue city).
-    def hometown_show(self):
-        band = self.band()
-        venue = self.venue()
-        if band and venue:
-            return band.hometown == venue.city
-        return False
+cursor.execute('''
+CREATE TABLE concerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    band_id INTEGER NOT NULL,
+    venue_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    time TEXT,
+    FOREIGN KEY (band_id) REFERENCES bands (id),
+    FOREIGN KEY (venue_id) REFERENCES venues (id)
+);
+''')
 
-    # Provide an introduction for the concert.
-    def introduction(self):
-        band = self.band()
-        venue = self.venue()
-        if band and venue:
-            return f"Hello {venue.city}!!!!! We are {band.name} and we're from {band.hometown}"
-        return None
-
-# The Band class handles operations related to bands.
+# Define classes
 class Band:
-    def __init__(self, band_id, name, hometown):
-        self.band_id = band_id
+    def __init__(self, name, hometown):
         self.name = name
         self.hometown = hometown
+        cursor.execute("INSERT INTO bands (name, hometown) VALUES (?, ?)", (name, hometown))
+        connection.commit()
+        self.band_id = cursor.lastrowid
 
-    # Retrieve all concerts performed by the band.
-    def concerts(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-        query = """
-        SELECT concerts.id, concerts.date, venues.title, venues.city
-        FROM concerts
-        JOIN venues ON concerts.venue_id = venues.id
-        WHERE concerts.band_id = ?;
-        """
-        cursor.execute(query, (self.band_id,))
-        concerts = cursor.fetchall()
-        connection.close()
-        return [{"concert_id": concert[0], "date": concert[1], "venue": concert[2], "city": concert[3]} for concert in concerts]
-
-    # Retrieve all venues where the band has performed.
-    def venues(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-        query = """
-        SELECT venues.title, venues.city
-        FROM venues
-        JOIN concerts ON venues.id = concerts.venue_id
-        WHERE concerts.band_id = ?;
-        """
-        cursor.execute(query, (self.band_id,))
-        venues = cursor.fetchall()
-        connection.close()
-        return [{"venue_title": venue[0], "city": venue[1]} for venue in venues]
-
-    # Schedule a performance for the band at a specific venue on a specific date.
-    def play_in_venue(self, venue_title, date):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-
-        # Get the venue ID based on the title.
-        cursor.execute("SELECT id FROM venues WHERE title = ?", (venue_title,))
+    def play_in_venue(self, venue_title, date, time):
+        venue_query = "SELECT id FROM venues WHERE title = ?"
+        cursor.execute(venue_query, (venue_title,))
         venue = cursor.fetchone()
         if venue:
             venue_id = venue[0]
-            cursor.execute("INSERT INTO concerts (band_id, venue_id, date) VALUES (?, ?, ?)", (self.band_id, venue_id, date))
+            query = "INSERT INTO concerts (band_id, venue_id, date, time) VALUES (?, ?, ?, ?)"
+            cursor.execute(query, (self.band_id, venue_id, date, time))
             connection.commit()
-            connection.close()
-            return True
-        connection.close()
-        return False
+        else:
+            print(f"Venue '{venue_title}' not found.")
 
-    # Provide introductions for all concerts performed by the band.
     def all_introductions(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
         query = """
-        SELECT venues.city FROM concerts
-        JOIN venues ON concerts.venue_id = venues.id
-        WHERE concerts.band_id = ?;
-        """
-        cursor.execute(query, (self.band_id,))
-        venues = cursor.fetchall()
-        connection.close()
-        return [f"Hello {venue[0]}!!!!! We are {self.name} and we're from {self.hometown}" for venue in venues]
-
-    # Find the band that has performed the most concerts.
-    @staticmethod
-    def most_performances():
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-        query = """
-        SELECT bands.id, bands.name, COUNT(concerts.id) AS concert_count
-        FROM bands
-        JOIN concerts ON bands.id = concerts.band_id
-        GROUP BY bands.id
-        ORDER BY concert_count DESC LIMIT 1;
-        """
-        cursor.execute(query)
-        band = cursor.fetchone()
-        connection.close()
-        if band:
-            return Band(band[0], band[1], None)
-        return None
-
-# The Venue class handles operations related to venues.
-class Venue:
-    def __init__(self, venue_id, title, city):
-        self.venue_id = venue_id
-        self.title = title
-        self.city = city
-
-    # Retrieve all concerts held at this venue.
-    def concerts(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
-        query = """
-        SELECT concerts.id, concerts.date, bands.name, bands.hometown
+        SELECT venues.city, bands.name, bands.hometown
         FROM concerts
         JOIN bands ON concerts.band_id = bands.id
-        WHERE concerts.venue_id = ?;
+        JOIN venues ON concerts.venue_id = venues.id
+        WHERE bands.id = ?
         """
-        cursor.execute(query, (self.venue_id,))
+        cursor.execute(query, (self.band_id,))
         concerts = cursor.fetchall()
-        connection.close()
-        return [{"concert_id": concert[0], "date": concert[1], "band_name": concert[2], "band_hometown": concert[3]} for concert in concerts]
+        introductions = [f"Hello {city}!!!!! We are {self.name} and we're from {self.hometown}" for city, _, _ in concerts]
+        return introductions
 
-    # Retrieve all bands that have performed at this venue.
-    def bands(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
+    @staticmethod
+    def most_performances():
         query = """
-        SELECT DISTINCT bands.name, bands.hometown
-        FROM bands
-        JOIN concerts ON bands.id = concerts.band_id
-        WHERE concerts.venue_id = ?;
+        SELECT bands.name, COUNT(concerts.id) AS performance_count
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
+        GROUP BY bands.name
+        ORDER BY performance_count DESC
+        LIMIT 1
         """
-        cursor.execute(query, (self.venue_id,))
-        bands = cursor.fetchall()
-        connection.close()
-        return [{"band_name": band[0], "band_hometown": band[1]} for band in bands]
+        cursor.execute(query)
+        result = cursor.fetchone()
+        return result[0] if result else None
 
-    # Retrieve a concert held at the venue on a specific date.
+class Venue:
+    def __init__(self, title, city):
+        self.title = title
+        self.city = city
+        cursor.execute("INSERT INTO venues (title, city) VALUES (?, ?)", (title, city))
+        connection.commit()
+        self.venue_id = cursor.lastrowid
+
     def concert_on(self, date):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
         query = """
-        SELECT * FROM concerts WHERE venue_id = ? AND date = ? LIMIT 1;
+        SELECT bands.name, venues.city, bands.hometown
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
+        JOIN venues ON concerts.venue_id = venues.id
+        WHERE venues.id = ? AND concerts.date = ?
+        LIMIT 1
         """
         cursor.execute(query, (self.venue_id, date))
         concert = cursor.fetchone()
-        connection.close()
         if concert:
-            return Concert(concert[0])  # Return a Concert object.
+            band_name, city, hometown = concert
+            return f"Hello {city}!!!!! We are {band_name} and we're from {hometown}"
         return None
 
-    # Find the band that has performed the most at this venue.
     def most_frequent_band(self):
-        connection = sqlite3.connect('db/concerts.db')
-        cursor = connection.cursor()
         query = """
-        SELECT bands.id, bands.name, COUNT(concerts.id) AS concert_count
-        FROM bands
-        JOIN concerts ON bands.id = concerts.band_id
+        SELECT bands.name, COUNT(concerts.id) AS performance_count
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
         WHERE concerts.venue_id = ?
-        GROUP BY bands.id
-        ORDER BY concert_count DESC LIMIT 1;
+        GROUP BY bands.name
+        ORDER BY performance_count DESC
+        LIMIT 1
         """
         cursor.execute(query, (self.venue_id,))
-        band = cursor.fetchone()
-        connection.close()
-        if band:
-            return Band(band[0], band[1], None)
+        result = cursor.fetchone()
+        return result[0] if result else None
+
+class Concert:
+    @staticmethod
+    def hometown_show(concert_id):
+        query = """
+        SELECT bands.hometown, venues.city
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
+        JOIN venues ON concerts.venue_id = venues.id
+        WHERE concerts.id = ?
+        """
+        cursor.execute(query, (concert_id,))
+        result = cursor.fetchone()
+        if result:
+            hometown, city = result
+            return hometown == city
+        return False
+
+    @staticmethod
+    def introduction(concert_id):
+        query = """
+        SELECT bands.name, venues.city, bands.hometown
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
+        JOIN venues ON concerts.venue_id = venues.id
+        WHERE concerts.id = ?
+        """
+        cursor.execute(query, (concert_id,))
+        result = cursor.fetchone()
+        if result:
+            band_name, city, hometown = result
+            return f"Hello {city}!!!!! We are {band_name} and we're from {hometown}"
         return None
 
-# Test the methods
-# This function sets up some test data and demonstrates the methods in the classes.
-def test_methods():
-    connection = sqlite3.connect('db/concerts.db')
-    cursor = connection.cursor()
+# Testing
+# Create bands and venues
+band_1 = Band("The Rolling Stones", "London")
+band_2 = Band("Metallica", "Los Angeles")
 
-    # Inserting bands
-    cursor.execute("INSERT INTO bands (name, hometown) VALUES (?, ?)", ('The Rolling Stones', 'London'))
-    cursor.execute("INSERT INTO bands (name, hometown) VALUES (?, ?)", ('Metallica', 'Los Angeles'))
+venue_1 = Venue("Madison Square Garden", "New York")
+venue_2 = Venue("Stadium Cairo", "Cairo")
 
-    # Inserting venues
-    cursor.execute("INSERT INTO venues (title, city) VALUES (?, ?)", ('Madison Square Garden', 'New York'))
-    cursor.execute("INSERT INTO venues (title, city) VALUES (?, ?)", ('The O2 Arena', 'London'))
+# Schedule concerts
+band_1.play_in_venue("Madison Square Garden", "2025-04-01", "20:00")
+band_1.play_in_venue("Stadium Cairo", "2025-05-01", "18:00")
+band_2.play_in_venue("Stadium Cairo", "2025-05-02", "19:00")
 
-    # Inserting concerts
-    cursor.execute("INSERT INTO concerts (band_id, venue_id, date) VALUES (?, ?, ?)", (1, 1, '2025-05-01'))
-    cursor.execute("INSERT INTO concerts (band_id, venue_id, date) VALUES (?, ?, ?)", (2, 2, '2025-06-10'))
-
-    connection.commit()
-
-    # Test methods
-    band1 = Band(1, "The Rolling Stones", "London")
-    venue1 = Venue(1, "Madison Square Garden", "New York")
-    concert1 = Concert(1)
-
-    # Print the actual band name for Concert 1
-    print("Band for Concert 1:", concert1.band().name)  
-
-    # Print the actual venue title for Concert 1
-    print("Venue for Concert 1:", concert1.venue().title)  
-
-    # Test hometown show (True/False)
-    print("Hometown Show?", concert1.hometown_show())  
-
-    # Band introduction for Concert 1
-    print("Band Introduction:", concert1.introduction())  
-
-    # All venues for band1
-    print("Venues for Band:", band1.venues())  
-
-    # All concerts for band1
-    print("All Concerts for Band:", band1.concerts())  
-
-    # All bands for venue1
-    print("Bands for Venue:", venue1.bands())  
-
-test_methods()
+# Outputs
+print("Band for Concert 1:", band_1.name)
+print("Venue for Concert 1:", venue_1.title)
+print("Hometown Show:", Concert.hometown_show(1))
+print("Introduction:", Concert.introduction(2))
+print("Concert on Date:", venue_2.concert_on("2025-05-01"))
+print("Most Frequent Band at Stadium Cairo:", venue_2.most_frequent_band())
+print("All Introductions for Band 1:", band_1.all_introductions())
+print("Band with Most Performances:", Band.most_performances())
