@@ -1,4 +1,3 @@
-# The Concert class handles operations related to concerts.
 import sqlite3
 
 # Connect to the database
@@ -55,6 +54,17 @@ class Band:
         else:
             print(f"Venue '{venue_title}' not found.")
 
+    def concerts(self):
+        """Retrieve all concerts played by the band."""
+        query = """
+        SELECT concerts.id, venues.title, concerts.date, concerts.time
+        FROM concerts
+        JOIN venues ON concerts.venue_id = venues.id
+        WHERE concerts.band_id = ?
+        """
+        cursor.execute(query, (self.band_id,))
+        return cursor.fetchall()
+
     def all_introductions(self):
         query = """
         SELECT venues.city, bands.name, bands.hometown
@@ -89,6 +99,28 @@ class Venue:
         cursor.execute("INSERT INTO venues (title, city) VALUES (?, ?)", (title, city))
         connection.commit()
         self.venue_id = cursor.lastrowid
+
+    def concerts(self):
+        """Retrieve all concerts hosted at this venue."""
+        query = """
+        SELECT concerts.id, bands.name, concerts.date, concerts.time
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
+        WHERE concerts.venue_id = ?
+        """
+        cursor.execute(query, (self.venue_id,))
+        return cursor.fetchall()
+
+    def bands(self):
+        """Retrieve all bands that have played at this venue."""
+        query = """
+        SELECT DISTINCT bands.name
+        FROM concerts
+        JOIN bands ON concerts.band_id = bands.id
+        WHERE concerts.venue_id = ?
+        """
+        cursor.execute(query, (self.venue_id,))
+        return [row[0] for row in cursor.fetchall()]
 
     def concert_on(self, date):
         query = """
@@ -175,3 +207,6 @@ print("Concert on Date:", venue_2.concert_on("2025-05-01"))
 print("Most Frequent Band at Stadium Cairo:", venue_2.most_frequent_band())
 print("All Introductions for Band 1:", band_1.all_introductions())
 print("Band with Most Performances:", Band.most_performances())
+print("Concerts for Band 1:", band_1.concerts())
+print("Concerts at Stadium Cairo:", venue_2.concerts())
+print("Bands that played at Stadium Cairo:", venue_2.bands())
